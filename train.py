@@ -11,7 +11,7 @@ from model import lenet
 
 DATA_BASE = 'data'
 TRAIN_DATA = 'train.tfrecord'
-NUM_EPOCHS = 10
+NUM_EPOCHS = 5
 
 MNIST_IMAGE_SIZE = 28
 MNIST_NUM_CHANNELS = 1
@@ -42,22 +42,42 @@ def input_pipe(is_training=True, batch_size=10):
 
 def main(args):
   print('dataset = ', flags.FLAGS.dataset)
-
+  # enable printing training log
+  tf.logging.set_verbosity(tf.logging.INFO)
+  
   train_log_dir = 'train'
   if not tf.gfile.Exists(train_log_dir):
     tf.gfile.MakeDirs(train_log_dir)
-
+  
+  
   with tf.Graph().as_default(): 
-    images, labels = input_pipe(is_training=True)
+    # dataset input
+    images, labels = input_pipe(is_training=True, batch_size=100)
+    
+    # neural network model
     logits, end_points = lenet.lenet(images, is_training=True)
+    # print name and shape of each tensor
+    print("layers:")
+    for k_, v_ in end_points.items():
+      print('name =', v_.name, ', shape =', v_.get_shape())
+    
+    # loss function
     tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=logits)
     total_loss = slim.losses.get_total_loss()
     tf.summary.scalar('losses/total_loss', total_loss)
+    
+    # specify the optimizer and create the train op
     optimizer = tf.train.GradientDescentOptimizer(learning_rate=.001)
-    train_tensor = slim.learning.create_train_op(total_loss, optimizer)
+    train_op = slim.learning.create_train_op(total_loss, optimizer)
 
     # Actually runs training.
-    slim.learning.train(train_tensor, train_log_dir)
+    final_loss = slim.learning.train(
+        train_op,
+        logdir=train_log_dir,
+        #number_of_steps=10,
+        #save_summaries_secs=5,
+        log_every_n_steps=10)
+    print("Last loss", final_loss)
 
 # # test session
 # import cv2
