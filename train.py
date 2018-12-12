@@ -1,17 +1,30 @@
 import tensorflow as tf
-from tensorflow.contrib import slim
 import os
+from datetime import datetime
 
 flags = tf.app.flags
 flags.DEFINE_string(name='dataset',
                     default='mnist',
                     help='dataset type')
+flags.DEFINE_integer(name='log_frequency',
+                    default=10,
+                    help='log frequency')
 
 from model import lenet
 
 DATA_BASE = 'data'
 TRAIN_DATA = 'train.tfrecord'
 NUM_EPOCHS = 5
+TRAIN_SIZE = 6000
+TEST_SIZE = 1000
+BATCH_SIZE = 100
+MAX_STEPS = NUM_EPOCHS * (TRAIN_SIZE / BATCH_SIZE)
+# Constants describing the training process.
+MOVING_AVERAGE_DECAY = 0.9999     # The decay to use for the moving average.
+NUM_EPOCHS_PER_DECAY = 350.0      # Epochs after which learning rate decays.
+LEARNING_RATE_DECAY_FACTOR = 0.1  # Learning rate decay factor.
+INITIAL_LEARNING_RATE = 0.01      # Initial learning rate.
+
 
 MNIST_IMAGE_SIZE = 28
 MNIST_NUM_CHANNELS = 1
@@ -51,8 +64,10 @@ def main(args):
   
   
   with tf.Graph().as_default(): 
+    global_step = tf.train.get_or_create_global_step()
+    
     # dataset input
-    images, labels = input_pipe(is_training=True, batch_size=100)
+    images, labels = input_pipe(is_training=True, batch_size=BATCH_SIZE)
     
     # neural network model
     logits, end_points = lenet.lenet(images, is_training=True)
@@ -62,34 +77,51 @@ def main(args):
       print('name =', v_.name, ', shape =', v_.get_shape())
     
     # loss function
-    tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=logits)
-    total_loss = slim.losses.get_total_loss()
-    tf.summary.scalar('losses/total_loss', total_loss)
+    loss = tf.reduce_mean(
+        tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits),
+        name = 'cross_entropy')
+    total_loss = loss    
+    tf.summary.scalar('total_loss', total_loss)
+
+    # specify learning rate
+    num_batches_per_epoch = TRAIN_SIZE / BATCH_SIZE
+    decay_steps = int(num_batches_per_epoch * NUM_EPOCHS_PER_DECAY)
+    lr = tf.train.exponential_decay(
+        INITIAL_LEARNING_RATE,
+        global_step,
+        decay_steps,
+        LEARNING_RATE_DECAY_FACTOR,
+        staircase=True)
+    tf.summary.scalar('learning_rate', lr)
     
-    # specify the optimizer and create the train op
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate=.001)
-    train_op = slim.learning.create_train_op(total_loss, optimizer)
+    # add histograms for trainable variables
+    for var_ in tf.trainable_variables():
+      tf.summary.histogram(var_.op.name, var_)
 
-    # Actually runs training.
-    final_loss = slim.learning.train(
-        train_op,
-        logdir=train_log_dir,
-        #number_of_steps=10,
-        #save_summaries_secs=5,
-        log_every_n_steps=10)
-    print("Last loss", final_loss)
+    # specify optimizer
+    opt = tf.train.GradientDescentOptimizer(lr)
 
-# # test session
-# import cv2
-# image_orig = tf.cast(image * 255 + 128, tf.uint8)
-# image_for_view = tf.image.convert_image_dtype(image_orig, dtype=tf.uint8)
-# with tf.Session() as sess:
-#   while True:
-#     xxx = sess.run({'image':image_for_view, 'label':label})
-#     print(xxx['label'])
-#     cv2.imshow("", xxx['image'])
-#     cv2.waitKey(0)
-   
+    # just to visualize the gradients
+    grads = opt.compute_gradients(total_loss)
+    # add histograms for gradients
+    for grad_, var_ in grads:
+      if grad_ is not None:
+        tf.summary.histogram(var_.op.name + '/gradients', grad_)
+    
+    # train op
+    train_op = opt.minimize(total_loss, global_step=global_step)
+    
+    # run
+    with tf.train.MonitoredTrainingSession(
+        checkpoint_dir=train_log_dir,
+        config=tf.ConfigProto(log_device_placement=False),
+        save_summaries_steps=10
+    ) as mon_sess:
+      while not mon_sess.should_stop():
+        _, loss_, step_ = mon_sess.run([train_op, total_loss, global_step])
+        if step_ % flags.FLAGS.log_frequency == 0:
+          print(datetime.now(), 'step=', step_, '/', MAX_STEPS, 'loss=', loss_)
+
   print('training done')  
 
 if __name__ == '__main__':
