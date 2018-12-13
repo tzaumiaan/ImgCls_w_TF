@@ -99,8 +99,8 @@ def main(args):
     for f_ in MNIST_FILES:
       url_ = os.path.join(MNIST_URL_BASE, MNIST_FILES[f_])
       maybe_download(url_, DATA_BASE)
-    generate_tfrecord_for_mnist('train', dnum=6000)
-    generate_tfrecord_for_mnist('test', dnum=500)
+    generate_tfrecord_for_mnist('train', dnum=7500)
+    generate_tfrecord_for_mnist('test', dnum=1000)
   print('dataset ready')
 
 if __name__ == '__main__':

@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 import os
 from datetime import datetime
 
@@ -14,11 +15,14 @@ from model import lenet
 
 DATA_BASE = 'data'
 TRAIN_DATA = 'train.tfrecord'
+#TEST_DATA = 'test.tfrecord'
 NUM_EPOCHS = 5
 TRAIN_SIZE = 6000
+#VALID_SIZE = 1500
 TEST_SIZE = 1000
 BATCH_SIZE = 100
-MAX_STEPS = NUM_EPOCHS * (TRAIN_SIZE / BATCH_SIZE)
+EPOCH_STEPS = int(TRAIN_SIZE / BATCH_SIZE)
+MAX_STEPS = int(NUM_EPOCHS * EPOCH_STEPS)
 # Constants describing the training process.
 MOVING_AVERAGE_DECAY = 0.9999     # The decay to use for the moving average.
 NUM_EPOCHS_PER_DECAY = 350.0      # Epochs after which learning rate decays.
@@ -47,11 +51,10 @@ def input_pipe(is_training=True, batch_size=10):
   
   if(flags.FLAGS.dataset is 'mnist'):
     dataset = dataset.map(parse_tfrecord_for_mnist)
-    dataset = dataset.repeat(NUM_EPOCHS) 
-    dataset = dataset.batch(batch_size)
-
-  return dataset.make_one_shot_iterator().get_next()
-
+    ds_train = dataset.take(TRAIN_SIZE)
+    ds_train = ds_train.repeat(NUM_EPOCHS) 
+    ds_train = ds_train.batch(batch_size)
+    return ds_train.make_one_shot_iterator().get_next()
 
 def main(args):
   print('dataset = ', flags.FLAGS.dataset)
@@ -67,18 +70,25 @@ def main(args):
     global_step = tf.train.get_or_create_global_step()
     
     # dataset input
-    images, labels = input_pipe(is_training=True, batch_size=BATCH_SIZE)
-    
+    train_images, train_labels = input_pipe(is_training=True, batch_size=BATCH_SIZE)
+    tf.summary.image('train_image', train_images)
+
     # neural network model
-    logits, end_points = lenet.lenet(images, is_training=True)
+    logits, end_points = lenet.lenet(train_images, is_training=True)
+    
     # print name and shape of each tensor
     print("layers:")
     for k_, v_ in end_points.items():
       print('name =', v_.name, ', shape =', v_.get_shape())
     
+    # prediction of this batch
+    train_pred = tf.argmax(tf.nn.softmax(logits), axis=1)
+    train_accuracy = tf.reduce_sum(tf.cast(tf.equal(train_pred,train_labels), tf.float32)) / BATCH_SIZE
+    tf.summary.scalar('train_accuracy', train_accuracy)
+     
     # loss function
     loss = tf.reduce_mean(
-        tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits),
+        tf.nn.sparse_softmax_cross_entropy_with_logits(labels=train_labels, logits=logits),
         name = 'cross_entropy')
     total_loss = loss    
     tf.summary.scalar('total_loss', total_loss)
@@ -111,18 +121,22 @@ def main(args):
     # train op
     train_op = opt.minimize(total_loss, global_step=global_step)
     
+    
     # run
-    with tf.train.MonitoredTrainingSession(
-        checkpoint_dir=train_log_dir,
-        config=tf.ConfigProto(log_device_placement=False),
-        save_summaries_steps=10
-    ) as mon_sess:
-      while not mon_sess.should_stop():
-        _, loss_, step_ = mon_sess.run([train_op, total_loss, global_step])
-        if step_ % flags.FLAGS.log_frequency == 0:
-          print(datetime.now(), 'step=', step_, '/', MAX_STEPS, 'loss=', loss_)
-
-  print('training done')  
+    init = tf.global_variables_initializer()
+    summary = tf.summary.merge_all()
+    with tf.Session() as sess:
+      summary_writer = tf.summary.FileWriter(train_log_dir, sess.graph)
+      sess.run(init)
+      for step in range(MAX_STEPS):
+         _, loss_, acc_, summary_ = sess.run([train_op, total_loss, train_accuracy, summary])
+         if (step+1) % flags.FLAGS.log_frequency == 0:
+           print(datetime.now(), 'step=', step, '/', MAX_STEPS, 'loss=', loss_, 'acc=', acc_)
+           summary_writer.add_summary(summary_, step)
+           summary_writer.flush()
+  
+  print('training done')
+      
 
 if __name__ == '__main__':
   tf.app.run()
