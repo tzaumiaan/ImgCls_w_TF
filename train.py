@@ -11,24 +11,21 @@ flags.DEFINE_integer(name='log_frequency',
                     default=10,
                     help='log frequency')
 
-from model import lenet
+from model.lenet import lenet
 
 DATA_BASE = 'data'
 TRAIN_DATA = 'train.tfrecord'
-#TEST_DATA = 'test.tfrecord'
 NUM_EPOCHS = 5
-TRAIN_SIZE = 6000
-#VALID_SIZE = 1500
+TRAIN_SIZE = 16000
+VALID_SIZE = 4000
 TEST_SIZE = 1000
 BATCH_SIZE = 100
-EPOCH_STEPS = int(TRAIN_SIZE / BATCH_SIZE)
-MAX_STEPS = int(NUM_EPOCHS * EPOCH_STEPS)
+TRAIN_STEPS_PER_EPOCH = int(TRAIN_SIZE // BATCH_SIZE)
+VALID_STEPS_PER_EPOCH = int(VALID_SIZE // BATCH_SIZE)
 # Constants describing the training process.
-MOVING_AVERAGE_DECAY = 0.9999     # The decay to use for the moving average.
-NUM_EPOCHS_PER_DECAY = 350.0      # Epochs after which learning rate decays.
-LEARNING_RATE_DECAY_FACTOR = 0.1  # Learning rate decay factor.
+NUM_EPOCHS_PER_DECAY = 5.0      # Epochs after which learning rate decays.
+LEARNING_RATE_DECAY_FACTOR = 0.01  # Learning rate decay factor.
 INITIAL_LEARNING_RATE = 0.01      # Initial learning rate.
-
 
 MNIST_IMAGE_SIZE = 28
 MNIST_NUM_CHANNELS = 1
@@ -43,18 +40,31 @@ def parse_tfrecord_for_mnist(serialized_example):
   label = tf.cast(feat['train/label'], tf.int64)
   return image, label
 
-def input_pipe(is_training=True, batch_size=10):
-  filename = os.path.join(DATA_BASE,TRAIN_DATA)
-  assert os.path.exists(filename), 'dataset not found'
+def get_dataset(mode='train', batch_size=10):
+  if mode is 'train' or 'valid':
+    filename = os.path.join(DATA_BASE,TRAIN_DATA)
   
+  assert os.path.exists(filename), 'dataset not found'
   dataset = tf.data.TFRecordDataset(filename)
   
-  if(flags.FLAGS.dataset is 'mnist'):
+  if flags.FLAGS.dataset is 'mnist':
     dataset = dataset.map(parse_tfrecord_for_mnist)
-    ds_train = dataset.take(TRAIN_SIZE)
-    ds_train = ds_train.repeat(NUM_EPOCHS) 
-    ds_train = ds_train.batch(batch_size)
-    return ds_train.make_one_shot_iterator().get_next()
+    if mode is 'train':
+      dataset = dataset.take(TRAIN_SIZE)
+    elif mode is 'valid':
+      dataset = dataset.skip(TRAIN_SIZE)
+      dataset = dataset.take(VALID_SIZE)
+
+    dataset = dataset.batch(batch_size)
+    return dataset
+
+def create_placeholder_for_input():
+  if flags.FLAGS.dataset is 'mnist':
+    labels = tf.placeholder(tf.int64, [BATCH_SIZE])
+    images = tf.placeholder(
+        tf.float32,
+        [BATCH_SIZE, MNIST_IMAGE_SIZE, MNIST_IMAGE_SIZE, MNIST_NUM_CHANNELS])
+  return images, labels
 
 def main(args):
   print('dataset = ', flags.FLAGS.dataset)
@@ -69,12 +79,29 @@ def main(args):
   with tf.Graph().as_default(): 
     global_step = tf.train.get_or_create_global_step()
     
-    # dataset input
-    train_images, train_labels = input_pipe(is_training=True, batch_size=BATCH_SIZE)
-    tf.summary.image('train_image', train_images)
+    # dataset input, always using CPU for this section
+    with tf.device('/cpu:0'):
+      # dataset source
+      trn_dataset = get_dataset(mode='train', batch_size=BATCH_SIZE)
+      vld_dataset = get_dataset(mode='valid', batch_size=BATCH_SIZE)
+      # iterator 
+      iterator = tf.data.Iterator.from_structure(
+          trn_dataset.output_types,
+          trn_dataset.output_shapes)
+      # get a new batch from iterator
+      get_batch = iterator.get_next()
+      # ops for initializing the iterators
+      # for choosing dataset for one epoch
+      trn_init_op = iterator.make_initializer(trn_dataset)
+      vld_init_op = iterator.make_initializer(vld_dataset)
+    
+    # placeholder for images and labels
+    images, labels = create_placeholder_for_input()
+    is_training = tf.placeholder(tf.bool)
+    tf.summary.image('images', images)
 
     # neural network model
-    logits, end_points = lenet.lenet(train_images, is_training=True)
+    logits, end_points = lenet(images, is_training=is_training)
     
     # print name and shape of each tensor
     print("layers:")
@@ -82,20 +109,19 @@ def main(args):
       print('name =', v_.name, ', shape =', v_.get_shape())
     
     # prediction of this batch
-    train_pred = tf.argmax(tf.nn.softmax(logits), axis=1)
-    train_accuracy = tf.reduce_sum(tf.cast(tf.equal(train_pred,train_labels), tf.float32)) / BATCH_SIZE
-    tf.summary.scalar('train_accuracy', train_accuracy)
+    pred = tf.argmax(tf.nn.softmax(logits), axis=1)
+    accuracy = tf.reduce_sum(tf.cast(tf.equal(pred,labels), tf.float32)) / BATCH_SIZE
+    tf.summary.scalar('accuracy', accuracy)
      
     # loss function
     loss = tf.reduce_mean(
-        tf.nn.sparse_softmax_cross_entropy_with_logits(labels=train_labels, logits=logits),
+        tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits),
         name = 'cross_entropy')
     total_loss = loss    
     tf.summary.scalar('total_loss', total_loss)
 
     # specify learning rate
-    num_batches_per_epoch = TRAIN_SIZE / BATCH_SIZE
-    decay_steps = int(num_batches_per_epoch * NUM_EPOCHS_PER_DECAY)
+    decay_steps = int(TRAIN_STEPS_PER_EPOCH * NUM_EPOCHS_PER_DECAY)
     lr = tf.train.exponential_decay(
         INITIAL_LEARNING_RATE,
         global_step,
@@ -110,30 +136,85 @@ def main(args):
 
     # specify optimizer
     opt = tf.train.GradientDescentOptimizer(lr)
-
-    # just to visualize the gradients
     grads = opt.compute_gradients(total_loss)
+    
     # add histograms for gradients
     for grad_, var_ in grads:
       if grad_ is not None:
         tf.summary.histogram(var_.op.name + '/gradients', grad_)
     
     # train op
-    train_op = opt.minimize(total_loss, global_step=global_step)
+    train_op = opt.apply_gradients(grads, global_step=global_step)
     
-    
-    # run
-    init = tf.global_variables_initializer()
+    # summerize all
     summary = tf.summary.merge_all()
+    # summary writer
+    summary_writer = tf.summary.FileWriter(train_log_dir)
+    # checkpoint saver
+    saver = tf.train.Saver()
+    
+    # session part
+    init_op = tf.global_variables_initializer()
     with tf.Session() as sess:
-      summary_writer = tf.summary.FileWriter(train_log_dir, sess.graph)
-      sess.run(init)
-      for step in range(MAX_STEPS):
-         _, loss_, acc_, summary_ = sess.run([train_op, total_loss, train_accuracy, summary])
-         if (step+1) % flags.FLAGS.log_frequency == 0:
-           print(datetime.now(), 'step=', step, '/', MAX_STEPS, 'loss=', loss_, 'acc=', acc_)
-           summary_writer.add_summary(summary_, step)
-           summary_writer.flush()
+      # initialization
+      sess.run(init_op)
+      summary_writer.add_graph(sess.graph)
+      
+      # epoch loop
+      for epoch in range(NUM_EPOCHS):
+        print(datetime.now(), 'epoch:', epoch+1, '/', NUM_EPOCHS)
+        
+        # training phase
+        print('==== training phase ====')
+        # specify dataset for training
+        sess.run(trn_init_op)
+        # training loop
+        for step in range(TRAIN_STEPS_PER_EPOCH):
+          # get batch for training
+          trn_images, trn_labels = sess.run(get_batch)
+          # run taining op
+          _, l_, acc_, sum_ = sess.run(
+              [train_op, total_loss, accuracy, summary],
+              feed_dict={
+                  images: trn_images,
+                  labels: trn_labels,
+                  is_training: True})
+          if (step+1) % flags.FLAGS.log_frequency == 0:
+            print(
+                datetime.now(),
+                'training step:', step+1, '/', TRAIN_STEPS_PER_EPOCH,
+                'loss=', l_,
+                'acc=', acc_)
+            summary_writer.add_summary(sum_, epoch*TRAIN_STEPS_PER_EPOCH + step)
+        
+        # validation phase
+        print('==== validation phase ====')
+        # specify dataset for validation
+        sess.run(vld_init_op)
+        # going through validation batches
+        vld_acc = 0.0
+        vld_batch_count = 0
+        for b_ in range(VALID_STEPS_PER_EPOCH):
+          # get batch for training
+          vld_images, vld_labels = sess.run(get_batch)
+          # run taining op
+          acc_ = sess.run(accuracy, feed_dict={
+              images: vld_images,
+              labels: vld_labels,
+              is_training: False})
+          vld_acc += acc_
+          vld_batch_count += 1
+        vld_acc /= vld_batch_count
+        print(datetime.now(), 'validation result: acc=', vld_acc)
+        
+        # checkpoint saving
+        print(datetime.now(), 'saving checkpoint of model ...')
+        ckpt_name = os.path.join(train_log_dir,'model_epoch'+str(epoch+1)+'.ckpt')
+        saver.save(sess, ckpt_name)
+        print(datetime.now(), ckpt_name, 'saved')
+        
+        # epoch end
+        print(datetime.now(), 'epoch:', epoch+1, 'done')
   
   print('training done')
       
