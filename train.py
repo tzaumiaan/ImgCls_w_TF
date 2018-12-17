@@ -1,31 +1,38 @@
 import tensorflow as tf
-import numpy as np
 import os
 from datetime import datetime
+
+from model.lenet import lenet
 
 flags = tf.app.flags
 flags.DEFINE_string(name='dataset',
                     default='mnist',
                     help='dataset type')
-flags.DEFINE_integer(name='log_frequency',
+flags.DEFINE_integer(name='log_freq',
                     default=10,
                     help='log frequency')
-
-from model.lenet import lenet
+flags.DEFINE_integer(name='num_epochs',
+                    default=6,
+                    help='number of epochs')
+flags.DEFINE_integer(name='batch_size',
+                    default=100,
+                    help='batch size')
+flags.DEFINE_float(name='init_lr',
+                    default=0.1,
+                    help='initial learning rate')
 
 DATA_BASE = 'data'
 TRAIN_DATA = 'train.tfrecord'
-NUM_EPOCHS = 5
+
+LOG_BASE = 'train'
+
 TRAIN_SIZE = 16000
 VALID_SIZE = 4000
-TEST_SIZE = 1000
-BATCH_SIZE = 100
-TRAIN_STEPS_PER_EPOCH = int(TRAIN_SIZE // BATCH_SIZE)
-VALID_STEPS_PER_EPOCH = int(VALID_SIZE // BATCH_SIZE)
+TRAIN_STEPS_PER_EPOCH = int(TRAIN_SIZE // flags.FLAGS.batch_size)
+VALID_STEPS_PER_EPOCH = int(VALID_SIZE // flags.FLAGS.batch_size)
 # Constants describing the training process.
-NUM_EPOCHS_PER_DECAY = 5.0      # Epochs after which learning rate decays.
-LEARNING_RATE_DECAY_FACTOR = 0.01  # Learning rate decay factor.
-INITIAL_LEARNING_RATE = 0.01      # Initial learning rate.
+NUM_EPOCHS_PER_DECAY = 2.0      # Epochs after which learning rate decays.
+LEARNING_RATE_DECAY_FACTOR = 0.1  # Learning rate decay factor.
 
 MNIST_IMAGE_SIZE = 28
 MNIST_NUM_CHANNELS = 1
@@ -60,21 +67,26 @@ def get_dataset(mode='train', batch_size=10):
 
 def create_placeholder_for_input():
   if flags.FLAGS.dataset is 'mnist':
-    labels = tf.placeholder(tf.int64, [BATCH_SIZE])
+    labels = tf.placeholder(tf.int64, [flags.FLAGS.batch_size])
     images = tf.placeholder(
         tf.float32,
-        [BATCH_SIZE, MNIST_IMAGE_SIZE, MNIST_IMAGE_SIZE, MNIST_NUM_CHANNELS])
+        [flags.FLAGS.batch_size, MNIST_IMAGE_SIZE, MNIST_IMAGE_SIZE, MNIST_NUM_CHANNELS])
   return images, labels
 
 def main(args):
-  print('dataset = ', flags.FLAGS.dataset)
+  print('dataset =', flags.FLAGS.dataset)
   # enable printing training log
   tf.logging.set_verbosity(tf.logging.INFO)
   
-  train_log_dir = 'train'
+  train_log_base = LOG_BASE
+  train_case = flags.FLAGS.dataset 
+  train_case += '_bs_' + str(flags.FLAGS.batch_size)
+  train_case += '_lr_' + str(flags.FLAGS.init_lr)
+  train_log_dir = os.path.join(LOG_BASE,train_case) 
+  if not tf.gfile.Exists(train_log_base):
+    tf.gfile.MakeDirs(train_log_base)
   if not tf.gfile.Exists(train_log_dir):
     tf.gfile.MakeDirs(train_log_dir)
-  
   
   with tf.Graph().as_default(): 
     global_step = tf.train.get_or_create_global_step()
@@ -82,8 +94,8 @@ def main(args):
     # dataset input, always using CPU for this section
     with tf.device('/cpu:0'):
       # dataset source
-      trn_dataset = get_dataset(mode='train', batch_size=BATCH_SIZE)
-      vld_dataset = get_dataset(mode='valid', batch_size=BATCH_SIZE)
+      trn_dataset = get_dataset(mode='train', batch_size=flags.FLAGS.batch_size)
+      vld_dataset = get_dataset(mode='valid', batch_size=flags.FLAGS.batch_size)
       # iterator 
       iterator = tf.data.Iterator.from_structure(
           trn_dataset.output_types,
@@ -110,7 +122,7 @@ def main(args):
     
     # prediction of this batch
     pred = tf.argmax(tf.nn.softmax(logits), axis=1)
-    accuracy = tf.reduce_sum(tf.cast(tf.equal(pred,labels), tf.float32)) / BATCH_SIZE
+    accuracy = tf.reduce_sum(tf.cast(tf.equal(pred,labels), tf.float32)) / flags.FLAGS.batch_size
     tf.summary.scalar('accuracy', accuracy)
      
     # loss function
@@ -123,7 +135,7 @@ def main(args):
     # specify learning rate
     decay_steps = int(TRAIN_STEPS_PER_EPOCH * NUM_EPOCHS_PER_DECAY)
     lr = tf.train.exponential_decay(
-        INITIAL_LEARNING_RATE,
+        flags.FLAGS.init_lr,
         global_step,
         decay_steps,
         LEARNING_RATE_DECAY_FACTOR,
@@ -161,8 +173,8 @@ def main(args):
       summary_writer.add_graph(sess.graph)
       
       # epoch loop
-      for epoch in range(NUM_EPOCHS):
-        print(datetime.now(), 'epoch:', epoch+1, '/', NUM_EPOCHS)
+      for epoch in range(flags.FLAGS.num_epochs):
+        print(datetime.now(), 'epoch:', epoch+1, '/', flags.FLAGS.num_epochs)
         
         # training phase
         print('==== training phase ====')
@@ -179,12 +191,12 @@ def main(args):
                   images: trn_images,
                   labels: trn_labels,
                   is_training: True})
-          if (step+1) % flags.FLAGS.log_frequency == 0:
+          if (step+1) % flags.FLAGS.log_freq == 0:
             print(
                 datetime.now(),
                 'training step:', step+1, '/', TRAIN_STEPS_PER_EPOCH,
-                'loss=', l_,
-                'acc=', acc_)
+                'loss={:.5f}'.format(l_),
+                'acc={:.4f}'.format(acc_))
             summary_writer.add_summary(sum_, epoch*TRAIN_STEPS_PER_EPOCH + step)
         
         # validation phase
@@ -205,7 +217,7 @@ def main(args):
           vld_acc += acc_
           vld_batch_count += 1
         vld_acc /= vld_batch_count
-        print(datetime.now(), 'validation result: acc=', vld_acc)
+        print(datetime.now(), 'validation result: acc={:.4f}'.format(vld_acc))
         
         # checkpoint saving
         print(datetime.now(), 'saving checkpoint of model ...')
