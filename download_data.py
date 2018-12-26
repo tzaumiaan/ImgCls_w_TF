@@ -1,7 +1,5 @@
 import tensorflow as tf
-import os
-import tarfile
-import zipfile
+import os, sys, tarfile, zipfile
 from six.moves import urllib
 
 from data_utils import DATA_BASE
@@ -43,10 +41,17 @@ def maybe_download(url, download_dir):
     # if download_dir not yet exists, make a new one
     if not os.path.exists(download_dir):
       os.makedirs(download_dir)
-    #download the file
+    # utility to show the progress bar
+    def _progress(count, block_size, total_size):
+      sys.stdout.write('\r>> Downloading %s %.1f%%' % (filename,
+          float(count * block_size) / float(total_size) * 100.0))
+      sys.stdout.flush()
+    # download the file
     filepath, _ = urllib.request.urlretrieve(
         url = url,
-        filename = filepath)
+        filename = filepath,
+        reporthook = _progress)
+    print() # new line
     print(filepath, ": download finished.")
   else:
     print(filepath, ": already exists. nothing done.")
