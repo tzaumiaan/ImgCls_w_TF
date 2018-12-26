@@ -9,6 +9,13 @@ MNIST_IMAGE_SIZE = 28
 MNIST_NUM_CHANNELS = 1
 MNIST_PIXEL_DEPTH = 255
 
+CIFAR10_TRAIN_FILES = ['cifar-10-batches-py/data_batch_1',
+                       'cifar-10-batches-py/data_batch_2',
+                       'cifar-10-batches-py/data_batch_3',
+                       'cifar-10-batches-py/data_batch_4',
+                       'cifar-10-batches-py/data_batch_5']
+CIFAR10_TEST_FILES = ['cifar-10-batches-py/test_batch']
+
 dataset_size = {
     'mnist': {
         'train': 16000,
@@ -59,6 +66,22 @@ def generate_tfrecord_for_mnist(file_dict, mode='train'):
     tfrec_writer.write(example.SerializeToString())
   tfrec_writer.close()
 
+def unpickle(pickle_file):
+  import pickle
+  with open(pickle_file, 'rb') as f:
+    unpickled_dict = pickle.load(f, encoding='bytes')
+  return unpickled_dict
+
+def generate_tfrecord_for_cifar10(mode='train'):
+  assert mode in ['train', 'test'], "Invalid data set type"   
+  filelist = CIFAR10_TRAIN_FILES if mode == 'train' else CIFAR10_TEST_FILES
+  
+  for f_ in filelist:
+    dict_ = unpickle(os.path.join(DATA_BASE, f_))
+    labels = np.array(dict_[b'labels'])
+    images = np.array(dict_[b'data'])
+    print(labels.shape, images.shape)
+
 def parse_tfrecord_for_mnist(serialized_example):
   feat = tf.parse_single_example(
       serialized_example,
@@ -69,6 +92,8 @@ def parse_tfrecord_for_mnist(serialized_example):
   label = tf.cast(feat['label'], tf.int64)
   return image, label
 
+
+
 def get_dataset(dset='mnist', mode='train', batch_size=10, fold_index=None):
   if mode is 'valid':
     tfrec_in = 'train.tfrecord'
@@ -78,19 +103,19 @@ def get_dataset(dset='mnist', mode='train', batch_size=10, fold_index=None):
   assert os.path.exists(filename), 'dataset not found'
   dataset = tf.data.TFRecordDataset(filename)
   
-  if dset is 'mnist':
+  if dset == 'mnist':
     dataset = dataset.map(parse_tfrecord_for_mnist)
     
     # this part serves the purpose of 5-fold cross validation
     # we roll the dataset based on fold index by 
     # repeating twice then performing skip-and-take
-    if mode is not 'test' and fold_index is not None:
+    if mode != 'test' and fold_index is not None:
       dataset = dataset.repeat(2)
       dataset = dataset.skip(fold_index*dataset_size[dset]['valid'])
       dataset = dataset.take(dataset_size[dset]['train'] + dataset_size[dset]['valid'])
     
     # this part generates the desired dataset with desired size
-    if mode is 'valid':
+    if mode == 'valid':
       dataset = dataset.skip(dataset_size[dset]['train'])
       dataset = dataset.take(dataset_size[dset]['valid'])
     else:
