@@ -9,6 +9,10 @@ MNIST_IMAGE_SIZE = 28
 MNIST_NUM_CHANNELS = 1
 MNIST_PIXEL_DEPTH = 255
 
+CIFAR_IMAGE_SIZE = 32
+CIFAR_NUM_CHANNELS = 3
+CIFAR_PIXEL_DEPTH = 255
+
 CIFAR10_TRAIN_FILES = ['cifar-10-batches-py/data_batch_1',
                        'cifar-10-batches-py/data_batch_2',
                        'cifar-10-batches-py/data_batch_3',
@@ -76,11 +80,41 @@ def generate_tfrecord_for_cifar10(mode='train'):
   assert mode in ['train', 'test'], "Invalid data set type"   
   filelist = CIFAR10_TRAIN_FILES if mode == 'train' else CIFAR10_TEST_FILES
   
+  labels, images = None, None
   for f_ in filelist:
     dict_ = unpickle(os.path.join(DATA_BASE, f_))
-    labels = np.array(dict_[b'labels'])
-    images = np.array(dict_[b'data'])
-    print(labels.shape, images.shape)
+    batch_labels = np.array(dict_[b'labels'])
+    batch_images = np.array(dict_[b'data'])
+    # reshape to channel, height, width dimemsions
+    batch_images = batch_images.reshape(batch_images.shape[0],
+        CIFAR_NUM_CHANNELS, CIFAR_IMAGE_SIZE, CIFAR_IMAGE_SIZE)
+    # put the channel to last dimension
+    batch_images = batch_images.transpose(0,2,3,1)
+    # for image visualization
+    batch_images = batch_images.astype(np.float32)
+    if labels is None and images is None:
+      labels, images = batch_labels, batch_images
+    else:
+      labels = np.concatenate((labels, batch_labels))
+      images = np.concatenate((images, batch_images))
+    #print(labels.shape, images.shape)
+  
+  assert labels.shape[0]==images.shape[0], "Sizes not the same between images and labels"
+  
+  tfrec_out = os.path.join(DATA_BASE, mode+'.tfrecord') 
+  tfrec_writer = tf.python_io.TFRecordWriter(tfrec_out)
+  print("writing to", tfrec_out, "...")
+  for i in range(images.shape[0]):
+    # convert data to features
+    list_label = tf.train.Int64List(value=[labels[i]])
+    list_image = tf.train.BytesList(value=[tf.compat.as_bytes(images[i].tostring())])
+    feat_label = tf.train.Feature(int64_list=list_label)
+    feat_image = tf.train.Feature(bytes_list=list_image)
+    feat = {'label': feat_label,
+            'image': feat_image}
+    example = tf.train.Example(features=tf.train.Features(feature=feat))
+    tfrec_writer.write(example.SerializeToString())
+  tfrec_writer.close()
 
 def parse_tfrecord_for_mnist(serialized_example):
   feat = tf.parse_single_example(
