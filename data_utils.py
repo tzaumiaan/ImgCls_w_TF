@@ -69,7 +69,7 @@ def parse_tfrecord_for_mnist(serialized_example):
   label = tf.cast(feat['label'], tf.int64)
   return image, label
 
-def get_dataset(dset='mnist', mode='train', batch_size=10):
+def get_dataset(dset='mnist', mode='train', batch_size=10, fold_index=None):
   if mode is 'valid':
     tfrec_in = 'train.tfrecord'
   else:
@@ -79,7 +79,17 @@ def get_dataset(dset='mnist', mode='train', batch_size=10):
   dataset = tf.data.TFRecordDataset(filename)
   
   if dset is 'mnist':
-    dataset = dataset.map(parse_tfrecord_for_mnist, )
+    dataset = dataset.map(parse_tfrecord_for_mnist)
+    
+    # this part serves the purpose of 5-fold cross validation
+    # we roll the dataset based on fold index by 
+    # repeating twice then performing skip-and-take
+    if mode is not 'test' and fold_index is not None:
+      dataset = dataset.repeat(2)
+      dataset = dataset.skip(fold_index*dataset_size[dset]['valid'])
+      dataset = dataset.take(dataset_size[dset]['train'] + dataset_size[dset]['valid'])
+    
+    # this part generates the desired dataset with desired size
     if mode is 'valid':
       dataset = dataset.skip(dataset_size[dset]['train'])
       dataset = dataset.take(dataset_size[dset]['valid'])

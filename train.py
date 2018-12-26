@@ -4,6 +4,7 @@ from datetime import datetime
 
 from data_utils import get_dataset, create_placeholder_for_input
 from data_utils import dataset_size
+
 from model.lenet import lenet
 
 flags = tf.app.flags
@@ -25,6 +26,9 @@ flags.DEFINE_integer(name='batch_size',
 flags.DEFINE_float(name='init_lr',
                     default=0.1,
                     help='initial learning rate')
+flags.DEFINE_float(name='l2_scale',
+                    default=1e-4,
+                    help='l2 regularizer scale')
 
 TRAIN_SIZE = dataset_size[flags.FLAGS.dataset]['train']
 VALID_SIZE = dataset_size[flags.FLAGS.dataset]['valid']
@@ -32,7 +36,7 @@ TRAIN_STEPS_PER_EPOCH = int(TRAIN_SIZE // flags.FLAGS.batch_size)
 VALID_STEPS_PER_EPOCH = int(VALID_SIZE // flags.FLAGS.batch_size)
 # Constants describing the training process.
 NUM_EPOCHS_PER_DECAY = 2.0      # Epochs after which learning rate decays.
-LEARNING_RATE_DECAY_FACTOR = 0.1  # Learning rate decay factor.
+LEARNING_RATE_DECAY_FACTOR = 0.5  # Learning rate decay factor.
 
 
 def main(args):
@@ -51,27 +55,35 @@ def main(args):
     tf.gfile.MakeDirs(train_log_dir)
   
   with tf.Graph().as_default(): 
+    # create global step
     global_step = tf.train.get_or_create_global_step()
     
-    # dataset input, always using CPU for this section
-    with tf.device('/cpu:0'):
-      # dataset source
-      trn_dataset = get_dataset(
-          dset=flags.FLAGS.dataset, mode='train',
-          batch_size=flags.FLAGS.batch_size)
-      vld_dataset = get_dataset(
-          dset=flags.FLAGS.dataset, mode='valid',
-          batch_size=flags.FLAGS.batch_size)
-      # iterator 
-      iterator = tf.data.Iterator.from_structure(
-          trn_dataset.output_types,
-          trn_dataset.output_shapes)
-      # get a new batch from iterator
-      get_batch = iterator.get_next()
-      # ops for initializing the iterators
-      # for choosing dataset for one epoch
-      trn_init_op = iterator.make_initializer(trn_dataset)
-      vld_init_op = iterator.make_initializer(vld_dataset)
+    with tf.name_scope('input_pipe'):
+      # use epoch count to pick fold index for cross validation
+      epoch_count = tf.floordiv(global_step, TRAIN_STEPS_PER_EPOCH)
+      fold_index = tf.floormod(epoch_count, 5) # 5-fold dataset
+      
+      # dataset input, always using CPU for this section
+      with tf.device('/cpu:0'):
+        # dataset source
+        trn_dataset = get_dataset(
+            dset=flags.FLAGS.dataset, mode='train',
+            batch_size=flags.FLAGS.batch_size,
+            fold_index=fold_index)
+        vld_dataset = get_dataset(
+            dset=flags.FLAGS.dataset, mode='valid',
+            batch_size=flags.FLAGS.batch_size,
+            fold_index=fold_index)
+        # iterator 
+        iterator = tf.data.Iterator.from_structure(
+            trn_dataset.output_types,
+            trn_dataset.output_shapes)
+        # get a new batch from iterator
+        get_batch = iterator.get_next()
+        # ops for initializing the iterators
+        # for choosing dataset for one epoch
+        trn_init_op = iterator.make_initializer(trn_dataset)
+        vld_init_op = iterator.make_initializer(vld_dataset)
  
     # placeholder for images and labels
     images, labels = create_placeholder_for_input(
@@ -81,7 +93,8 @@ def main(args):
     tf.summary.image('images', images)
 
     # neural network model
-    logits, end_points = lenet(images, is_training=is_training)
+    logits, end_points = lenet(images, is_training=is_training,
+        l2_scale=flags.FLAGS.l2_scale)
     
     # print name and shape of each tensor
     print("layers:")
@@ -89,21 +102,26 @@ def main(args):
       print('name =', v_.name, ', shape =', v_.get_shape())
     
     # prediction of this batch
-    pred = tf.argmax(tf.nn.softmax(logits), axis=1)
-    match_count =  tf.reduce_sum(tf.cast(tf.equal(pred,labels), tf.float32))
-    # note: here the running batch size can be changed in testing mode,
-    #       so we cannot reuse the batch size from flags
-    running_batch_size = tf.cast(tf.size(pred),tf.float32)
-    accuracy = match_count / running_batch_size
-    tf.add_to_collection('accuracy', accuracy)
-    tf.summary.scalar('accuracy', accuracy)
+    with tf.name_scope('prediction'):
+      pred = tf.argmax(tf.nn.softmax(logits), axis=1)
+      match_count =  tf.reduce_sum(tf.cast(tf.equal(pred,labels), tf.float32))
+      # note: here the running batch size can be changed in testing mode,
+      #       so we cannot reuse the batch size from flags
+      running_batch_size = tf.cast(tf.size(pred),tf.float32)
+      accuracy = match_count / running_batch_size
+      tf.add_to_collection('accuracy', accuracy)
+      tf.summary.scalar('accuracy', accuracy)
  
     # loss function
-    loss = tf.reduce_mean(
-        tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits),
-        name = 'cross_entropy')
-    total_loss = loss    
-    tf.summary.scalar('total_loss', total_loss)
+    with tf.name_scope('losses'):
+      raw_loss = tf.reduce_mean(
+          tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=logits),
+          name = 'cross_entropy')
+      tf.summary.scalar('raw_loss', raw_loss)
+      regu_loss = tf.add_n(tf.losses.get_regularization_losses())
+      tf.summary.scalar('regu_loss', regu_loss)
+      total_loss = raw_loss + regu_loss    
+      tf.summary.scalar('total_loss', total_loss)
 
     # specify learning rate
     decay_steps = int(TRAIN_STEPS_PER_EPOCH * NUM_EPOCHS_PER_DECAY)
