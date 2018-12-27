@@ -18,16 +18,16 @@ flags.DEFINE_string(name='log_dir',
                     default='train',
                     help='log directory')
 flags.DEFINE_integer(name='num_epochs',
-                    default=6,
+                    default=20,
                     help='number of epochs')
 flags.DEFINE_integer(name='batch_size',
-                    default=100,
+                    default=200,
                     help='batch size')
 flags.DEFINE_float(name='init_lr',
                     default=0.1,
                     help='initial learning rate')
 flags.DEFINE_float(name='l2_scale',
-                    default=1e-4,
+                    default=1e-6,
                     help='l2 regularizer scale')
 
 TRAIN_SIZE = dataset_size[flags.FLAGS.dataset]['train']
@@ -35,7 +35,7 @@ VALID_SIZE = dataset_size[flags.FLAGS.dataset]['valid']
 TRAIN_STEPS_PER_EPOCH = int(TRAIN_SIZE // flags.FLAGS.batch_size)
 VALID_STEPS_PER_EPOCH = int(VALID_SIZE // flags.FLAGS.batch_size)
 # Constants describing the training process.
-NUM_EPOCHS_PER_DECAY = 2.0      # Epochs after which learning rate decays.
+NUM_EPOCHS_PER_DECAY = 10.0      # Epochs after which learning rate decays.
 LEARNING_RATE_DECAY_FACTOR = 0.5  # Learning rate decay factor.
 
 
@@ -48,6 +48,7 @@ def main(args):
   train_case = flags.FLAGS.dataset 
   train_case += '_bs_' + str(flags.FLAGS.batch_size)
   train_case += '_lr_' + str(flags.FLAGS.init_lr)
+  train_case += '_l2s_' + str(flags.FLAGS.l2_scale)
   train_log_dir = os.path.join(flags.FLAGS.log_dir, train_case) 
   if not tf.gfile.Exists(train_log_base):
     tf.gfile.MakeDirs(train_log_base)

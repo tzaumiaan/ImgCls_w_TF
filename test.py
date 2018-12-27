@@ -11,7 +11,7 @@ flags.DEFINE_integer(name='batch_size',
                     default=100,
                     help='batch size')
 
-model_path = 'train/mnist_bs_100_lr_0.1/model_epoch6.ckpt'
+model_path = 'train/cifar10_bs_100_lr_0.1/model_epoch6.ckpt'
 
 TEST_SIZE = dataset_size[flags.FLAGS.dataset]['test']
 TEST_STEPS_PER_EPOCH = int(TEST_SIZE // flags.FLAGS.batch_size)

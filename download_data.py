@@ -3,8 +3,7 @@ import os, sys, tarfile, zipfile
 from six.moves import urllib
 
 from data_utils import DATA_BASE
-from data_utils import generate_tfrecord_for_mnist
-from data_utils import generate_tfrecord_for_cifar10
+from data_utils import generate_tfrecord
 
 flags = tf.app.flags
 flags.DEFINE_string(name='dataset',
@@ -86,15 +85,15 @@ def main(args):
     for f_ in MNIST_FILES:
       url_ = os.path.join(MNIST_URL_BASE, MNIST_FILES[f_])
       maybe_download(url_, DATA_BASE)
-    generate_tfrecord_for_mnist(MNIST_FILES, 'train')
-    generate_tfrecord_for_mnist(MNIST_FILES, 'test')
+    generate_tfrecord('mnist', mode='train', file_dict=MNIST_FILES)
+    generate_tfrecord('mnist', mode='test', file_dict=MNIST_FILES)
   elif flags.FLAGS.dataset == 'cifar10':
     url_ = os.path.join(CIFAR_URL_BASE, CIFAR_FILES['cifar10'])
     maybe_download(url_, DATA_BASE)
     zfile_ = os.path.join(DATA_BASE, CIFAR_FILES['cifar10'])
     extract(zfile_, extract_path=DATA_BASE)
-    generate_tfrecord_for_cifar10('train')
-    generate_tfrecord_for_cifar10('test')
+    generate_tfrecord(dset='cifar10', mode='train')
+    generate_tfrecord(dset='cifar10', mode='test')
   print('dataset ready')
 
 if __name__ == '__main__':
