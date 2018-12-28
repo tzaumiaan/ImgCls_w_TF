@@ -11,6 +11,7 @@ MNIST_PIXEL_DEPTH = 255
 
 CIFAR_IMAGE_SIZE = 32
 CIFAR_NUM_CHANNELS = 3
+CIFAR_PIXEL_DEPTH = 255
 
 CIFAR10_TRAIN_FILES = ['cifar-10-batches-py/data_batch_1',
                        'cifar-10-batches-py/data_batch_2',
@@ -49,8 +50,19 @@ def per_image_normalization(images):
   """
   images = images.astype(np.float32)
   mean = np.mean(images, axis=(1,2)).reshape(images.shape[0],1,1,images.shape[3])
-  scale = np.std(images, axis=(1,2)).reshape(images.shape[0],1,1,images.shape[3])
+  stddev = np.std(images, axis=(1,2)).reshape(images.shape[0],1,1,images.shape[3])
+  scale = np.maximum(stddev, 1/np.sqrt(images.shape[1]*images.shape[2]))
   return (images - mean)/scale
+
+def global_mean_normalization(images):
+  """
+  substract with the mean image
+  input:
+    images: numpy array with dimension (dnum, height, width, channel)
+  """
+  images = images.astype(np.float32)
+  mean = np.mean(images, axis=0)
+  return (images - mean)
 
 def unpickle(pickle_file):
   import pickle
@@ -115,6 +127,8 @@ def generate_tfrecord(dset, mode='train', file_dict=None):
     
     # normalization
     images = per_image_normalization(images)
+    #images = per_image_uniform_scaling(images, min_range=0, max_range=CIFAR_PIXEL_DEPTH)
+    #images = global_mean_normalization(images)
     
     # for debug: visualize after normalization
     #plt.imshow((images[0]*0.22 + 0.5).astype(np.float32))

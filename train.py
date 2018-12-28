@@ -6,6 +6,7 @@ from data_utils import get_dataset, create_placeholder_for_input
 from data_utils import dataset_size
 
 from model.lenet import lenet
+from model.cifarnet import cifarnet
 
 flags = tf.app.flags
 flags.DEFINE_string(name='dataset',
@@ -21,13 +22,13 @@ flags.DEFINE_integer(name='num_epochs',
                     default=20,
                     help='number of epochs')
 flags.DEFINE_integer(name='batch_size',
-                    default=200,
+                    default=50,
                     help='batch size')
 flags.DEFINE_float(name='init_lr',
                     default=0.1,
                     help='initial learning rate')
 flags.DEFINE_float(name='l2_scale',
-                    default=1e-6,
+                    default=1e-8,
                     help='l2 regularizer scale')
 
 TRAIN_SIZE = dataset_size[flags.FLAGS.dataset]['train']
@@ -35,7 +36,7 @@ VALID_SIZE = dataset_size[flags.FLAGS.dataset]['valid']
 TRAIN_STEPS_PER_EPOCH = int(TRAIN_SIZE // flags.FLAGS.batch_size)
 VALID_STEPS_PER_EPOCH = int(VALID_SIZE // flags.FLAGS.batch_size)
 # Constants describing the training process.
-NUM_EPOCHS_PER_DECAY = 10.0      # Epochs after which learning rate decays.
+NUM_EPOCHS_PER_DECAY = 100.0      # Epochs after which learning rate decays.
 LEARNING_RATE_DECAY_FACTOR = 0.5  # Learning rate decay factor.
 
 
@@ -94,13 +95,28 @@ def main(args):
     tf.summary.image('images', images)
 
     # neural network model
-    logits, end_points = lenet(images, is_training=is_training,
-        l2_scale=flags.FLAGS.l2_scale)
+    if flags.FLAGS.dataset == 'mnist':
+      model_network = lenet
+    elif flags.FLAGS.dataset == 'cifar10':
+      model_network = cifarnet
+    else:
+      raise(ValueError, 'Invalid dataset') 
+    logits, end_points = model_network(images, is_training=is_training,
+          l2_scale=flags.FLAGS.l2_scale)
     
     # print name and shape of each tensor
     print("layers:")
     for k_, v_ in end_points.items():
       print('name =', v_.name, ', shape =', v_.get_shape())
+    # print the total size of trainable variables
+    n_params = 0
+    for var_ in tf.trainable_variables():
+      var_shape = var_.get_shape()
+      n_params_var = 1
+      for dim_ in var_shape:
+        n_params_var *= dim_.value
+      n_params += n_params_var
+    print("model parameter size:", n_params)
     
     # prediction of this batch
     with tf.name_scope('prediction'):
@@ -197,19 +213,22 @@ def main(args):
         sess.run(vld_init_op)
         # going through validation batches
         vld_acc = 0.0
+        vld_loss = 0.0
         vld_batch_count = 0
         for b_ in range(VALID_STEPS_PER_EPOCH):
           # get batch for validation
           vld_images, vld_labels = sess.run(get_batch)
           # run taining op
-          acc_ = sess.run(accuracy, feed_dict={
+          acc_, loss_ = sess.run([accuracy, total_loss],feed_dict={
               images: vld_images,
               labels: vld_labels,
               is_training: False})
           vld_acc += acc_
+          vld_loss += loss_
           vld_batch_count += 1
         vld_acc /= vld_batch_count
-        print(datetime.now(), 'validation result: acc={:.4f}'.format(vld_acc))
+        vld_loss /= vld_batch_count
+        print(datetime.now(), 'validation result: loss={:.5f} acc={:.4f}'.format(vld_loss, vld_acc))
         
         # checkpoint saving
         print(datetime.now(), 'saving checkpoint of model ...')

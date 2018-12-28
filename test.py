@@ -11,7 +11,9 @@ flags.DEFINE_integer(name='batch_size',
                     default=100,
                     help='batch size')
 
-model_path = 'train/cifar10_bs_100_lr_0.1/model_epoch6.ckpt'
+MODEL_PATHS = {
+    'mnist': 'train/mnist_bs_200_lr_0.1_l2s_1e-06/model_epoch20.ckpt',
+    'cifar10': 'train/cifar10_bs_200_lr_0.1_l2s_1e-06/model_epoch20.ckpt'}
 
 TEST_SIZE = dataset_size[flags.FLAGS.dataset]['test']
 TEST_STEPS_PER_EPOCH = int(TEST_SIZE // flags.FLAGS.batch_size)
@@ -40,6 +42,7 @@ def main(args):
     # restore saved model and run testing
     init_op = tf.global_variables_initializer()
     with tf.Session() as sess:
+      model_path = MODEL_PATHS[flags.FLAGS.dataset]
       model_meta = model_path + '.meta'
       saver = tf.train.import_meta_graph(model_meta)
       print(datetime.now(), 'meta graph imported from', model_meta)
