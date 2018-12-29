@@ -61,7 +61,7 @@ def main(args):
     with tf.name_scope('input_pipe'):
       # use epoch count to pick fold index for cross validation
       epoch_count = tf.floordiv(global_step, TRAIN_STEPS_PER_EPOCH)
-      fold_index = tf.floormod(epoch_count, 5) # 5-fold dataset
+      fold_index = tf.floormod(epoch_count, 10) # 10-fold dataset
       
       # dataset input, always using CPU for this section
       with tf.device('/cpu:0'):
@@ -153,15 +153,22 @@ def main(args):
 
     # specify optimizer
     opt = tf.train.GradientDescentOptimizer(lr)
-    grads = opt.compute_gradients(total_loss)
     
-    # add histograms for gradients
-    for grad_, var_ in grads:
-      if grad_ is not None:
-        tf.summary.histogram(var_.op.name + '/gradients', grad_)
+    # compute gradients and apply
+    # note: with batch norm layers we have to use update_ops
+    #       to get hidden variables into the list needed
+    #       to be trained
+    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    with tf.control_dependencies(update_ops): 
+      grads = opt.compute_gradients(total_loss)
     
-    # train op
-    train_op = opt.apply_gradients(grads, global_step=global_step)
+      # add histograms for gradients
+      for grad_, var_ in grads:
+        if grad_ is not None:
+          tf.summary.histogram(var_.op.name + '/gradients', grad_)
+    
+      # train op
+      train_op = opt.apply_gradients(grads, global_step=global_step)
     
     # summerize all
     summary = tf.summary.merge_all()

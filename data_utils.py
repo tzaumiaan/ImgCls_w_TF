@@ -22,12 +22,12 @@ CIFAR10_TEST_FILES = ['cifar-10-batches-py/test_batch']
 
 dataset_size = {
     'mnist': {
-        'train': 16000,
-        'valid':  4000,
+        'train': 18000,
+        'valid':  2000,
         'test' :  2000},
     'cifar10': {
-        'train': 40000,
-        'valid': 10000,
+        'train': 45000,
+        'valid':  5000,
         'test' : 10000}
 }
 
