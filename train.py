@@ -32,9 +32,7 @@ flags.DEFINE_float(name='l2_scale',
                     help='l2 regularizer scale')
 
 TRAIN_SIZE = dataset_size[flags.FLAGS.dataset]['train']
-VALID_SIZE = dataset_size[flags.FLAGS.dataset]['valid']
 TRAIN_STEPS_PER_EPOCH = int(TRAIN_SIZE // flags.FLAGS.batch_size)
-VALID_STEPS_PER_EPOCH = int(VALID_SIZE // flags.FLAGS.batch_size)
 # Constants describing the training process.
 NUM_EPOCHS_PER_DECAY = 100.0      # Epochs after which learning rate decays.
 LEARNING_RATE_DECAY_FACTOR = 0.5  # Learning rate decay factor.
@@ -74,7 +72,6 @@ def main(args):
             fold_index=fold_index)
         vld_dataset = get_dataset(
             dset=flags.FLAGS.dataset, mode='valid',
-            batch_size=flags.FLAGS.batch_size,
             fold_index=fold_index)
         # iterator 
         iterator = tf.data.Iterator.from_structure(
@@ -211,24 +208,17 @@ def main(args):
         print('==== validation phase ====')
         # specify dataset for validation
         sess.run(vld_init_op)
-        # going through validation batches
-        vld_acc = 0.0
-        vld_loss = 0.0
-        vld_batch_count = 0
-        for b_ in range(VALID_STEPS_PER_EPOCH):
-          # get batch for validation
-          vld_images, vld_labels = sess.run(get_batch)
-          # run taining op
-          acc_, loss_ = sess.run([accuracy, total_loss],feed_dict={
-              images: vld_images,
-              labels: vld_labels,
-              is_training: False})
-          vld_acc += acc_
-          vld_loss += loss_
-          vld_batch_count += 1
-        vld_acc /= vld_batch_count
-        vld_loss /= vld_batch_count
-        print(datetime.now(), 'validation result: loss={:.5f} acc={:.4f}'.format(vld_loss, vld_acc))
+        # get batch for validation
+        vld_images, vld_labels = sess.run(get_batch)
+        # run taining op
+        vld_acc, vld_loss = sess.run([accuracy, total_loss],feed_dict={
+            images: vld_images,
+            labels: vld_labels,
+            is_training: False})
+        print(
+            datetime.now(),
+            'validation result: loss={:.5f}'.format(vld_loss),
+            'acc={:.4f}'.format(vld_acc))
         
         # checkpoint saving
         print(datetime.now(), 'saving checkpoint of model ...')

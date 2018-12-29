@@ -1,22 +1,15 @@
 import tensorflow as tf
 from datetime import datetime
 from data_utils import get_dataset
-from data_utils import dataset_size
 
 flags = tf.app.flags
 flags.DEFINE_string(name='dataset',
                     default='mnist',
                     help='dataset type')
-flags.DEFINE_integer(name='batch_size',
-                    default=100,
-                    help='batch size')
 
 MODEL_PATHS = {
     'mnist': 'train/mnist_bs_200_lr_0.1_l2s_1e-06/model_epoch20.ckpt',
-    'cifar10': 'train/cifar10_bs_200_lr_0.1_l2s_1e-06/model_epoch20.ckpt'}
-
-TEST_SIZE = dataset_size[flags.FLAGS.dataset]['test']
-TEST_STEPS_PER_EPOCH = int(TEST_SIZE // flags.FLAGS.batch_size)
+    'cifar10': 'train/cifar10_bs_50_lr_0.1_l2s_1e-08/model_epoch20.ckpt'}
 
 def main(args):
   print('dataset =', flags.FLAGS.dataset)
@@ -26,8 +19,7 @@ def main(args):
     with tf.device('/cpu:0'):
       # dataset source
       test_dataset = get_dataset(
-          dset=flags.FLAGS.dataset, mode='test',
-          batch_size=flags.FLAGS.batch_size)
+          dset=flags.FLAGS.dataset, mode='test')
       # iterator 
       iterator = tf.data.Iterator.from_structure(
           test_dataset.output_types,
@@ -37,7 +29,6 @@ def main(args):
       # ops for initializing the iterators
       # for choosing dataset for one epoch
     test_init_op = iterator.make_initializer(test_dataset)
-    
 
     # restore saved model and run testing
     init_op = tf.global_variables_initializer()
@@ -60,25 +51,16 @@ def main(args):
       
       # testing phase
       print('==== testing phase ====')
-      # specify dataset for validation
+      # specify dataset for test
       sess.run(test_init_op)
-      # going through validation batches
-      test_acc = 0.0
-      test_batch_count = 0
-      for b_ in range(TEST_STEPS_PER_EPOCH):
-        # get batch for testing
-        test_images, test_labels = sess.run(get_batch)
-        # run taining op
-        acc_ = sess.run(accuracy, feed_dict={
-            images: test_images,
-            labels: test_labels,
-            is_training: False})
-        print(datetime.now(), 'batch {}/{} acc={:.4f}'.format(b_+1, TEST_STEPS_PER_EPOCH, acc_))
-        test_acc += acc_
-        test_batch_count += 1
-      test_acc /= test_batch_count
+      # get batch for testing
+      test_images, test_labels = sess.run(get_batch)
+      # run taining op
+      test_acc = sess.run(accuracy, feed_dict={
+          images: test_images,
+          labels: test_labels,
+          is_training: False})
       print(datetime.now(), 'testing result: acc={:.4f}'.format(test_acc))
-
 
 if __name__ == '__main__':
   tf.app.run()

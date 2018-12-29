@@ -197,11 +197,13 @@ def get_dataset(dset='mnist', mode='train', batch_size=10, fold_index=None):
   else:
     dataset = dataset.take(dataset_size[dset][mode])
   
-  # shuffle the dataset for training
+  # shuffle the dataset and split them into batches for training
   if mode == 'train':
     dataset = dataset.shuffle(dataset_size[dset][mode])
-  
-  dataset = dataset.batch(batch_size)
+    dataset = dataset.batch(batch_size)
+  else: # otherwise just make the entire dataset as one batch
+    dataset = dataset.batch(dataset_size[dset][mode])
+   
   return dataset
 
 def create_placeholder_for_input(dset='mnist', batch_size=None):
