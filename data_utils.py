@@ -126,8 +126,8 @@ def generate_tfrecord(dset, mode='train', file_dict=None):
     #plt.show()
     
     # normalization
-    images = per_image_normalization(images)
-    #images = per_image_uniform_scaling(images, min_range=0, max_range=CIFAR_PIXEL_DEPTH)
+    #images = per_image_normalization(images)
+    images = per_image_uniform_scaling(images, min_range=0, max_range=CIFAR_PIXEL_DEPTH)
     #images = global_mean_normalization(images)
     
     # for debug: visualize after normalization

@@ -6,10 +6,9 @@ flags = tf.app.flags
 flags.DEFINE_string(name='dataset',
                     default='mnist',
                     help='dataset type')
-
-MODEL_PATHS = {
-    'mnist': 'train/mnist_bs_200_lr_0.1_l2s_1e-06/model_epoch20.ckpt',
-    'cifar10': 'train/cifar10_bs_50_lr_0.1_l2s_1e-08/model_epoch20.ckpt'}
+flags.DEFINE_string(name='ckpt_path',
+                    default='train/mnist_bs_200_lr_0.1_l2s_1e-06/model_epoch20.ckpt',
+                    help='checkpoint path')
 
 def main(args):
   print('dataset =', flags.FLAGS.dataset)
@@ -33,7 +32,7 @@ def main(args):
     # restore saved model and run testing
     init_op = tf.global_variables_initializer()
     with tf.Session() as sess:
-      model_path = MODEL_PATHS[flags.FLAGS.dataset]
+      model_path = flags.FLAGS.ckpt_path
       model_meta = model_path + '.meta'
       saver = tf.train.import_meta_graph(model_meta)
       print(datetime.now(), 'meta graph imported from', model_meta)
