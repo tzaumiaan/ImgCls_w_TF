@@ -21,7 +21,7 @@ Topics include:
   with inputs as `tf.placeholder` and necessary operators stored by `tf.add_to_collection`,
   and later loaded back to make inference.
   
-## Versions which I have tested
+## Versions Tested
 - Python 3.5 or 3.6
 - Tensorflow 1.12 (both CPU and GPU versions)
 - NumPy 1.15
@@ -75,6 +75,7 @@ for checking if CUDA driver and cuDNN is properly installed and configured.
 
 ## Future work
 - To learn how to freeze the model into `.pb` file
+- To visualize training versus validation for each epoch
 
 ## Useful references
 - [Finetune AlexNet with Tensorflow](https://github.com/kratzert/finetune_alexnet_with_tensorflow),
