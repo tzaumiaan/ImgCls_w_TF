@@ -23,10 +23,9 @@ Topics include:
   
 ## Versions Tested
 - Python 3.5 or 3.6
-- Tensorflow 1.12 (both CPU and GPU versions)
-- NumPy 1.15
 - CUDA 9.0
-- cuDNN 7.0
+- Tensorflow-GPU 1.12 (with cuDNN 7.1.4) or 1.9 (with cuDNN 7.0.5)
+- NumPy 1.15
 
 ## Usage
 Currently two image datasets
