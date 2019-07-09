@@ -1,4 +1,5 @@
 import tensorflow as tf
+from absl import app, flags, logging
 import os
 from datetime import datetime
 
@@ -8,14 +9,13 @@ from data_utils import dataset_size
 from model.lenet import lenet
 from model.cifarnet import cifarnet
 
-flags = tf.app.flags
 flags.DEFINE_string(name='dataset',
                     default='mnist',
                     help='dataset type')
 flags.DEFINE_integer(name='log_freq',
                     default=10,
                     help='log frequency')
-flags.DEFINE_string(name='log_dir',
+flags.DEFINE_string(name='log_directory',
                     default='train',
                     help='log directory')
 flags.DEFINE_integer(name='num_epochs',
@@ -31,24 +31,20 @@ flags.DEFINE_float(name='l2_scale',
                     default=1e-8,
                     help='l2 regularizer scale')
 
-TRAIN_SIZE = dataset_size[flags.FLAGS.dataset]['train']
-TRAIN_STEPS_PER_EPOCH = int(TRAIN_SIZE // flags.FLAGS.batch_size)
-# Constants describing the training process.
-NUM_EPOCHS_PER_DECAY = 100.0      # Epochs after which learning rate decays.
-LEARNING_RATE_DECAY_FACTOR = 0.5  # Learning rate decay factor.
-
-
 def main(args):
   print('dataset =', flags.FLAGS.dataset)
-  # enable printing training log
-  tf.logging.set_verbosity(tf.logging.INFO)
+  TRAIN_SIZE = dataset_size[flags.FLAGS.dataset]['train']
+  TRAIN_STEPS_PER_EPOCH = int(TRAIN_SIZE // flags.FLAGS.batch_size)
+  # Constants describing the training process.
+  NUM_EPOCHS_PER_DECAY = 100.0      # Epochs after which learning rate decays.
+  LEARNING_RATE_DECAY_FACTOR = 0.5  # Learning rate decay factor.
   
-  train_log_base = flags.FLAGS.log_dir
+  train_log_base = flags.FLAGS.log_directory
   train_case = flags.FLAGS.dataset 
   train_case += '_bs_' + str(flags.FLAGS.batch_size)
   train_case += '_lr_' + str(flags.FLAGS.init_lr)
   train_case += '_l2s_' + str(flags.FLAGS.l2_scale)
-  train_log_dir = os.path.join(flags.FLAGS.log_dir, train_case) 
+  train_log_dir = os.path.join(train_log_base, train_case) 
   if not tf.gfile.Exists(train_log_base):
     tf.gfile.MakeDirs(train_log_base)
   if not tf.gfile.Exists(train_log_dir):
@@ -240,5 +236,5 @@ def main(args):
       
 
 if __name__ == '__main__':
-  tf.app.run()
+  app.run(main)
 
